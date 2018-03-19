@@ -1,0 +1,206 @@
+unit classXTaxTable;
+
+interface
+
+uses XMLWorks2, Classes;
+
+
+type TXTaxLkpCollectionItem = class(TXMLCollectionItem)
+private
+    FIncomeFrom: currency;
+    FIncomeTo: currency;
+    FTaxAmt: currency;
+    FTaxPerc: integer;
+    FIsOver65: boolean;
+    FIsAnnual: boolean;
+    procedure SetIncomeFrom(const Value: currency);
+    procedure SetIncomeTo(const Value: currency);
+    procedure SetTaxAmt(const Value: currency);
+    procedure SetTaxPerc(const Value: integer);
+published
+  property  IncomeFrom : currency read FIncomeFrom write SetIncomeFrom;
+  property  IncomeTo   : currency read FIncomeTo write SetIncomeTo;
+  property  TaxAmt     : currency read FTaxAmt write SetTaxAmt;
+  property  TaxPerc    : integer read FTaxPerc write SetTaxPerc;
+end;
+
+
+type TXTaxTableCollection = class(TXMLCollection)
+private
+    FRebate65: currency;
+    FRebatePrim: currency;
+    FTaxYear: integer;
+    FIsOver65: boolean;
+    FIsAnnual: boolean;
+    procedure SetRebate65(const Value: currency);
+    procedure SetRebatePrim(const Value: currency);
+    procedure SetTaxYear(const Value: integer);
+
+    function LocateTaxLkp(cTaxIncome : Currency) : TXTaxLkpCollectionItem;
+    procedure SetIsAnnual(const Value: boolean);
+    procedure SetIsOver65(const Value: boolean);
+public
+  property  IsOver65 : boolean read FIsOver65 write SetIsOver65;
+  property  IsAnnual : boolean read FIsAnnual write SetIsAnnual;
+
+  procedure ImportTextTable(sFileName : string);
+  function  LookupTax(cTaxable: Currency) : real;
+
+published
+  property  TaxYear     : integer read FTaxYear write SetTaxYear;
+  property  RebatePrim  : currency read FRebatePrim write SetRebatePrim;
+  property  Rebate65    : currency read FRebate65 write SetRebate65;
+end;
+
+var
+  TheTaxTable : TXTaxTableCollection;
+
+implementation
+
+uses SysUtils, Math;
+
+{ TXTaxLkpCollectionItem }
+
+
+{ TXTaxTable }
+
+procedure TXTaxTableCollection.ImportTextTable(sFileName: string);
+var
+  aStrings : TStringList;
+  aXTaxItem : TXTaxLkpCollectionItem;
+  iIndex : integer;
+  iPos : integer;
+begin
+  if not FileExists(sFileName) then
+    Abort;
+  Clear;
+  try
+    aStrings := TStringList.Create;
+    aStrings.LoadFromFile(sFileName);
+    iPos := 0;
+    for iIndex := 0 to aStrings.Count -1 do
+    begin
+      case iIndex of
+        0       : TaxYear     := StrToInt(aStrings[iIndex]);
+        4       : RebatePrim  := StrToCurr(aStrings[iIndex]);
+        5       : Rebate65    := StrToCurr(aStrings[iIndex]);
+        9..999  :
+        if iPos = 0 then
+        begin
+          aXTaxItem := TXTaxLkpCollectionItem.Create(TheTaxTable);
+          aXTaxItem.IncomeFrom := StrToCurr(aStrings[iIndex]);
+          Inc(iPos);
+          aXTaxItem.IncomeTo   := StrToCurr(aStrings[iIndex+iPos]);
+          Inc(iPos);
+          aXTaxItem.TaxAmt     := StrToCurr(aStrings[iIndex+iPos]);
+          Inc(iPos);
+          aXTaxItem.TaxPerc    := StrToInt(aStrings[iIndex+iPos]);
+        end
+        else
+          Dec(iPos);
+      end;
+
+    end;
+  finally
+    aStrings.Free;
+  end;
+end;
+
+function TXTaxTableCollection.LocateTaxLkp(
+  cTaxIncome: Currency): TXTaxLkpCollectionItem;
+var
+  iIndex : integer;
+begin
+  for iIndex := 0 to Self.Count-1 do
+  begin
+    Result := TXTaxLkpCollectionItem(Items[iIndex]);
+    if (cTaxIncome >= Result.IncomeFrom) and (cTaxIncome <= Result.IncomeTo) then
+      exit;
+  end;
+end;
+
+function TXTaxTableCollection.LookupTax(cTaxable: Currency): real;
+var
+  iIndex : integer;
+  aTaxLkp : TXTaxLkpCollectionItem;
+  cAnnualInc : Currency;
+begin
+  Result := -1;
+  if IsAnnual then
+    cAnnualInc := cTaxable
+  else
+    cAnnualInc := cTaxable * 12;
+
+  if (((cAnnualInc >= Self.RebatePrim) and (not IsOver65)) or
+      ((cAnnualInc >= Self.Rebate65) and (IsOver65)))  then
+  begin
+    aTaxLkp := LocateTaxLkp(cAnnualInc);
+    Result := aTaxLkp.TaxAmt;
+    Result := Result + ((cAnnualInc - aTaxLkp.IncomeFrom -1) * aTaxLkp.TaxPerc / 100);
+    Result := Result - Self.RebatePrim;
+    if IsOver65 then
+      Result := Result - Self.Rebate65;
+    if not IsAnnual then
+      Result := Result / 12;
+  end
+  else
+    Result := 0;
+  if Result < 0 then
+    Result := 0;
+end;
+
+procedure TXTaxTableCollection.SetIsAnnual(const Value: boolean);
+begin
+  FIsAnnual := Value;
+end;
+
+procedure TXTaxTableCollection.SetIsOver65(const Value: boolean);
+begin
+  FIsOver65 := Value;
+end;
+
+procedure TXTaxTableCollection.SetRebate65(const Value: currency);
+begin
+  FRebate65 := Value;
+end;
+
+procedure TXTaxTableCollection.SetRebatePrim(const Value: currency);
+begin
+  FRebatePrim := Value;
+end;
+
+procedure TXTaxTableCollection.SetTaxYear(const Value: integer);
+begin
+  FTaxYear := Value;
+end;
+
+{ TXTaxLkpCollectionItem }
+
+procedure TXTaxLkpCollectionItem.SetIncomeFrom(const Value: currency);
+begin
+  FIncomeFrom := Value;
+end;
+
+procedure TXTaxLkpCollectionItem.SetIncomeTo(const Value: currency);
+begin
+  FIncomeTo := Value;
+end;
+
+procedure TXTaxLkpCollectionItem.SetTaxAmt(const Value: currency);
+begin
+  FTaxAmt := Value;
+end;
+
+procedure TXTaxLkpCollectionItem.SetTaxPerc(const Value: integer);
+begin
+  FTaxPerc := Value;
+end;
+
+initialization
+  TheTaxTable := TXTaxTableCollection.Create(TXTaxLkpCollectionItem);
+
+finalization
+  TheTaxTable.Clear;
+  TheTaxTable.Free;
+
+end.

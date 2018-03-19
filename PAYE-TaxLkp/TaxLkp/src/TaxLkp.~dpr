@@ -1,0 +1,14 @@
+program TaxLkp;
+
+uses
+  Forms,
+  formTaxLkpMain in 'formTaxLkpMain.pas' {Form1};
+
+{$R *.res}
+
+begin
+  Application.Initialize;
+  Application.Title := 'The Tax Looker Upper (EMP 10)';
+  Application.CreateForm(TForm1, Form1);
+  Application.Run;
+end.
